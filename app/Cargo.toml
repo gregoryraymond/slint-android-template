@@ -49,6 +49,14 @@ build_targets = ["aarch64-linux-android", "x86_64-linux-android"]
 resources = "android-res"
 assets = "android-assets"
 
+# Uncomment to compile hand-written Kotlin/Java from app/kotlin/ into the APK's
+# classes.dex, or to receive .kt that a glue crate emits there from build.rs.
+# Left commented because kotlinc errors on an empty source directory, so
+# enabling it before there is anything to compile breaks the build. CI already
+# installs kotlinc, so uncommenting is the only step needed.
+#   kotlin_sources = "kotlin"
+# java_sources works the same way for .java.
+
 [package.metadata.android.sdk]
 min_sdk_version = 24
 target_sdk_version = 34

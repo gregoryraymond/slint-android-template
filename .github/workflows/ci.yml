@@ -118,6 +118,19 @@ jobs:
         with:
           tool: just
       - run: cargo install cargo-apk2 --locked
+      # Kotlin compiler. cargo-apk2 only shells out to kotlinc when a crate (or
+      # app/kotlin/) actually declares kotlin_sources, so this is inert for a
+      # pure-Rust app. It is installed unconditionally so that the day you DO
+      # add a Kotlin component, CI keeps working without anyone having to
+      # remember to come back and edit this file - the devcontainer already
+      # ships kotlinc, and a local-works/CI-fails split is exactly the trap
+      # worth spending 10s of runner time to avoid.
+      - name: Install Kotlin compiler
+        run: |
+          curl -sSL https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip -o /tmp/kotlinc.zip
+          unzip -q /tmp/kotlinc.zip -d "$HOME"
+          echo "KOTLIN_HOME=$HOME/kotlinc" >> "$GITHUB_ENV"
+          echo "$HOME/kotlinc/bin" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@v2
       - name: Force fresh app relink
         run: cargo clean -p slint_android_app

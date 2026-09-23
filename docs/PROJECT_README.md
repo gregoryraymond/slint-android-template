@@ -165,17 +165,81 @@ that puts a launchable activity in the manifest. Omit it and the app installs
 successfully and then cannot be opened — no icon, no error. `just apk` fails the
 build on exactly that.
 
-## Adding JVM-side glue
+## Adding Kotlin or Java components
 
-cargo-apk2 makes this incremental:
+Starting with no JVM code does not lock you out of it. cargo-apk2 compiles
+Kotlin and Java sources into the APK's `classes.dex` alongside the Rust
+`cdylib`, so you can add JVM components when you need one and keep everything
+else in Rust.
 
-- **From a crate** — add the dep, set `kotlin_sources = "kotlin"` under
-  `[package.metadata.android]`, and its classes land in `classes.dex` on a
-  normal build. [`slint-android-gestures`](https://github.com/gregoryraymond/slint-mapping/tree/main/crates/slint-android-gestures)
-  is a complete worked example (multi-touch pinch).
-- **Hand-written** — drop `.kt` files in `app/kotlin/<package>/`, same config.
-- **Services** — wrap the JVM subclass in a crate and declare it with
-  `[[package.metadata.android.service]]`.
+`app/kotlin/` exists for this, and `app/Cargo.toml` carries a commented
+`kotlin_sources = "kotlin"` next to the other Android settings. It ships
+commented out because **kotlinc errors on an empty source directory** — enabling
+it before there is anything to compile breaks the build. Both the dev container
+and CI already install kotlinc, so uncommenting is the only step.
+
+### Hand-written Kotlin
+
+Put sources under `app/kotlin/`, in directories mirroring the package
+declaration:
+
+```
+app/kotlin/com/example/myapp/Notifier.kt
+```
+
+Uncomment `kotlin_sources = "kotlin"` and they compile on a normal `just apk`.
+Call into them from Rust with the [`jni`](https://docs.rs/jni) crate — pin
+**jni 0.21**, which is what Slint's Android backend already pulls in, so the
+build does not end up with two incompatible jni versions.
+
+### Kotlin shipped by a crate
+
+A glue crate cannot write into your source tree directly, so the convention is
+that it `include_str!`s its `.kt` at its own compile time and exposes a helper
+your `build.rs` calls to materialise them:
+
+```rust
+// app/build.rs
+fn main() {
+    slint_build::compile("ui/main.slint").expect("Slint build failed");
+    // Emit the crate's Kotlin into app/kotlin/ so kotlin_sources picks it up.
+    slint_android_gestures::build::copy_kotlin_to("kotlin").expect("write kotlin");
+}
+```
+
+Add the crate to **`[build-dependencies]`** as well as `[dependencies]` if you
+also call its runtime API; Cargo dedups the compilation across both roles.
+[`slint-android-gestures`](https://github.com/gregoryraymond/slint-mapping/tree/main/crates/slint-android-gestures)
+is a complete worked example — it bridges raw `MotionEvent`s into a safe Rust
+callback API for multi-touch.
+
+### Replacing the Activity
+
+The default launcher activity is the framework's `android.app.NativeActivity`
+(see above). To use your own Kotlin `Activity` — typically one that subclasses
+`NativeActivity` so Slint still gets its surface — write it under `app/kotlin/`
+and change the `name` in the activity block:
+
+```toml
+[[package.metadata.android.application.activity]]
+name = "com.example.myapp.MyActivity"     # was android.app.NativeActivity
+```
+
+Keep the `android.app.lib_name` meta-data: `NativeActivity` uses it to find the
+`cdylib` regardless of which subclass is declared.
+
+### Services and other manifest entries
+
+cargo-apk2 supports declarative blocks the original cargo-apk lacked, so a
+privileged `Service` needs no hand-edited manifest:
+
+```toml
+[[package.metadata.android.application.service]]
+name = "com.example.myapp.SyncService"
+```
+
+Permissions and features follow the same pattern — see the `uses_permission`
+and `uses_feature` entries already in `app/Cargo.toml`.
 
 ## Optional: the component library
 
