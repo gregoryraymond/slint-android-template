@@ -1,0 +1,111 @@
+# Signed release APK, published to a GitHub Release on version tags.
+#
+# cargo-apk2 needs NO Cargo.toml signing config: it reads the keystore path and
+# password from CARGO_APK_RELEASE_KEYSTORE{,_PASSWORD}, so the key material only
+# ever exists in repo secrets and the runner's temp dir.
+#
+# Required repo secrets (the workflow is a no-op until you add them):
+#   ANDROID_RELEASE_KEYSTORE          - base64 of your release .jks
+#   ANDROID_RELEASE_KEYSTORE_PASSWORD - its password
+#
+# Create a keystore once with:
+#   keytool -genkey -v -keystore release.jks -keyalg RSA -keysize 2048 \
+#           -validity 10000 -alias release
+#   base64 -w0 release.jks          # paste into the secret
+#
+# KEEP THAT FILE. Android identifies an app by its signing key: lose it and you
+# can never ship an update to installed users, only a differently-named app.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-apk:
+    name: signed release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write        # creates the GitHub release
+    env:
+      ANDROID_API: "34"
+      ANDROID_BUILD_TOOLS: "34.0.0"
+      ANDROID_NDK_VERSION: "27.0.12077973"
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      # ORDER MATTERS: free the ~25GB of unused toolchains FIRST, then add swap
+      # on the freed space. Release needs both - thin-LTO with codegen-units=1
+      # makes the final link memory-hungry in a way debug is not, and a swapfile
+      # on a full disk just starves the linker instead.
+      - name: Free disk space
+        run: |
+          echo "before:"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell /usr/share/swift || true
+          echo "after:"; df -h / | tail -1
+      - name: Add swap space
+        continue-on-error: true
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          swapon --show
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ""
+      - name: Install Android platform, build-tools, NDK
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-$ANDROID_API" \
+            "build-tools;$ANDROID_BUILD_TOOLS" \
+            "ndk;$ANDROID_NDK_VERSION"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: cargo install cargo-apk2 --locked
+      - uses: Swatinem/rust-cache@v2
+      # Same truncated-stub insurance as CI: relink the app from cached deps
+      # rather than trusting a restored .so.
+      - name: Force fresh app relink
+        run: cargo clean -p slint_android_app --release
+      - name: Decode release keystore
+        run: echo "${{ secrets.ANDROID_RELEASE_KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+      # `just apk-release` gates the output, including a release-only check that
+      # the signer is NOT the Android debug key - a debug-signed "release" would
+      # install but could never update over a properly-signed predecessor.
+      - name: Build and verify signed release APK
+        env:
+          CARGO_APK_RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
+          CARGO_APK_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+        run: just apk-release
+      - name: Version-stamp the APK
+        run: cp "$(just apk-path release)" "slint-android-app-${GITHUB_REF_NAME}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: slint-android-app-*.apk
+          if-no-files-found: error
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: slint-android-app-${{ github.ref_name }}.apk

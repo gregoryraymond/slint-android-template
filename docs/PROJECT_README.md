@@ -64,21 +64,45 @@ The APK is multi-arch, so one artifact installs on both a real device
 
 ## CI
 
-- **`.github/workflows/ci.yml`** — fmt, clippy and tests on the host. No NDK, so
-  it is fast and runs on every push. It lints `core` only: `app` is an
-  Android-only cdylib whose entry point does not compile for the host.
-- **`.github/workflows/android.yml`** — installs the NDK and cargo-apk2, lints
-  `app` against the real Android target, and builds the APK. On a `v*` tag it
-  attaches the APK to a GitHub Release; on ordinary pushes it uploads a
-  7-day artifact.
+- **`.github/workflows/ci.yml`** — `rustfmt`, core tests and workspace clippy on
+  the host, plus a **debug APK** build on pushes to `main`.
+- **`.github/workflows/release.yml`** — a **signed release APK** on `v*` tags,
+  attached to a GitHub Release.
 
-Release assets are used rather than artifacts for tags on purpose: artifact
-storage has a quota that a few ~90MB APKs exhaust, while release assets count
-against repository storage.
+CI builds a *debug* APK deliberately. A release APK is **unsigned** without a
+keystore, and an unsigned APK will not install — tapping it just gives "problem
+parsing the package". Debug auto-signs with the standard Android debug key, so
+it proves the app genuinely packages into something installable without CI ever
+holding your signing identity.
+
+Both paths run `just apk` / `just apk-release`, which gate the output before it
+can be published:
+
+- the arm64 native lib must be a real build, not a truncated stub (a cached
+  broken `.so` installs fine and then crashes)
+- a launcher activity must exist, or the app installs with **no icon** and
+  cannot be opened at all
+- a release APK must not be signed with the debug key, which would install but
+  could never update over a properly-signed predecessor
+
+### Cutting a signed release
+
+Add two repo secrets, then push a tag:
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0    # -> APK attached to the release
+keytool -genkey -v -keystore release.jks -keyalg RSA -keysize 2048 \
+        -validity 10000 -alias release
+base64 -w0 release.jks     # -> secret ANDROID_RELEASE_KEYSTORE
+                           #    password -> ANDROID_RELEASE_KEYSTORE_PASSWORD
+git tag v0.1.0 && git push origin v0.1.0
 ```
+
+**Keep that keystore.** Android identifies an app by its signing key: lose it
+and you can never update installed users, only ship a differently-named app.
+
+Locally, `just apk` builds and verifies a debug APK; `just apk-release` does the
+signed one (it requires `CARGO_APK_RELEASE_KEYSTORE` and
+`CARGO_APK_RELEASE_KEYSTORE_PASSWORD`).
 
 ## Adding JVM-side glue
 

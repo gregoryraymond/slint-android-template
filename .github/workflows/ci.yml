@@ -1,19 +1,29 @@
 name: CI
 
-# Host-side gate: formatting, clippy and tests. Deliberately needs no Android
-# NDK, so it stays fast and runs on every push. APK packaging is android.yml.
-#
-# Every step calls a justfile recipe rather than raw cargo, so `just ci` green
-# on your laptop means this job is green too. Verified: the app crate DOES
-# compile for the host - Slint gates the android-activity backend behind
-# target_os = "android" and falls back to a host backend - so clippy can lint
-# the whole workspace here without an NDK.
-
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
   workflow_dispatch:
+
+# Host jobs (fmt / core tests / workspace check) run on every push and PR; the
+# APK cross-compile runs on pushes to main.
+#
+# The Android setup here is PORTED FROM A WORKFLOW KNOWN TO BUILD THIS STACK
+# GREEN, not invented. Several steps look superfluous and are not - each one
+# corresponds to a failure that is silent or badly-reported:
+#
+#   * setup-android needs `packages: ""`; with the default it runs its own
+#     package install and fails the job before anything else executes.
+#   * ~25 GB of preinstalled toolchains must be deleted or the debug link runs
+#     out of disk and clang dies with a bare SIGBUS ("Bus error").
+#   * CARGO_BUILD_JOBS caps parallel compiles so Skia's C++ build stays under
+#     the 7 GB runner ceiling.
+#   * NO swapfile in the APK job. A 10 GB /swapfile eats the very disk the
+#     linker needs; the OOM it would guard against is a release-LTO problem.
+#   * `cargo clean -p` forces a fresh relink. rust-cache restores all of
+#     target/, and a truncated .so from an earlier out-of-disk build is treated
+#     as up-to-date and packaged as a broken stub.
 
 permissions:
   contents: read
@@ -22,29 +32,121 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  fmt:
+    name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        # rust-toolchain.toml pins the channel and targets, so the version
-        # lives in exactly one place.
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
+  test-core:
+    name: core tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p slint_android_app_core
 
-      # taiki-e/install-action is what slint-mobile's green CI uses; keeping the
-      # same action here avoids two different ways of installing one tool.
+  clippy:
+    name: clippy (workspace)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      # Host Skia/Slint graph is heavy enough that the runner can be reclaimed
+      # mid-check without this. Best-effort: a swap hiccup must not fail the job.
+      - name: Add swap space
+        continue-on-error: true
+        run: |
+          # The runner ships an active /swapfile, so fallocate on it fails with
+          # "Text file busy" - disable first, then replace with a bigger one.
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          swapon --show
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      - run: just install-host-deps
+      - uses: Swatinem/rust-cache@v2
+      # Slint gates the android-activity backend behind target_os = "android",
+      # so the app crate DOES lint on the host with no NDK.
+      - run: just clippy
 
-      # Slint's Skia renderer needs these to build even for a host check.
-      - name: Install host build dependencies
-        run: just install-host-deps
-
-      - name: fmt + clippy + test
-        run: just ci
+  apk:
+    name: debug APK
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Debug, not release: a release APK is UNSIGNED without a keystore, and an
+    # unsigned APK will not install. Debug auto-signs with the standard Android
+    # debug key, so this proves the app really packages into something
+    # installable. Signed builds are release.yml's job.
+    env:
+      ANDROID_API: "34"
+      ANDROID_BUILD_TOOLS: "34.0.0"
+      ANDROID_NDK_VERSION: "27.0.12077973"
+      CARGO_BUILD_JOBS: "2"
+      # An unstripped debug Skia lib is ~290MB; stripping keeps it runnable and
+      # shrinks it by an order of magnitude.
+      CARGO_PROFILE_DEV_STRIP: "symbols"
+    steps:
+      - name: Free disk space
+        run: |
+          echo "before:"; df -h / | tail -1
+          # /usr/share/dotnet alone is ~25GB; none of these are used here.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell /usr/share/swift || true
+          echo "after:"; df -h / | tail -1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ""
+      - name: Install Android platform, build-tools, NDK
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-$ANDROID_API" \
+            "build-tools;$ANDROID_BUILD_TOOLS" \
+            "ndk;$ANDROID_NDK_VERSION"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: cargo install cargo-apk2 --locked
+      - uses: Swatinem/rust-cache@v2
+      - name: Force fresh app relink
+        run: cargo clean -p slint_android_app
+      # `just apk` builds with --lib and then gates the result: arm64 .so must
+      # be a real build not a truncated stub, and a launcher activity must
+      # exist or the app installs with no icon and cannot be opened.
+      - name: Build and verify debug APK
+        run: just apk
+      - name: Locate APK
+        id: find
+        run: echo "path=$(just apk-path debug)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          # The verified, installable APK only - never the -unaligned
+          # intermediate cargo-apk2 also emits.
+          path: ${{ steps.find.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7

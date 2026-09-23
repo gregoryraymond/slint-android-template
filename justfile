@@ -33,35 +33,83 @@ build:
 release:
     cd app && cargo apk2 build --release
 
-# This is what .github/workflows/android.yml calls, so packaging is identical
-# locally and in CI - a green `just apk` here means the workflow's build step
-# will pass too. `just` uses the LAST comment line as the listed description,
-# so keep the one-liner below immediately above the recipe.
-# Build a release APK and verify one was actually produced
+# Builds a DEBUG apk on purpose. A release APK is unsigned unless a keystore
+# is supplied, and an unsigned APK will not install - tapping it just gives
+# "problem parsing the package". The debug build is auto-signed with the
+# standard Android debug key, so it installs and proves packaging works.
+# Use `just apk-release` (with a keystore) to cut something distributable.
+#
+# --lib packages only the cdylib. Without it cargo-apk2 also tries to APK any
+# example target and fails looking for a .so that does not exist.
+# `just` lists the LAST comment line as the description, so keep the one-liner
+# immediately above the recipe.
+# Build a debug APK and verify it is actually installable
 apk:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd app && cargo apk2 build --release
+    cd app && cargo apk2 build --lib
     cd "{{justfile_directory()}}"
-    # cargo-apk2 writes under target/<triple>/release/apk/. Fail loudly if the
-    # build "succeeded" but emitted nothing - otherwise CI would upload air.
-    apk="$(find target -name '*.apk' -print -quit)"
-    if [ -z "$apk" ]; then
-        echo "no APK produced under target/" >&2
-        exit 1
-    fi
-    ls -lh "$apk"
+    just _apk-verify debug
 
-# Print the path of the built APK (CI consumes this; run `just apk` first)
-apk-path:
+# Build a signed release APK. Requires a keystore; cargo-apk2 reads these two
+# environment variables directly (no Cargo.toml config):
+#   CARGO_APK_RELEASE_KEYSTORE           path to the .jks
+#   CARGO_APK_RELEASE_KEYSTORE_PASSWORD  its password
+# Without them the output is UNSIGNED and will not install.
+# Build a signed release APK (needs CARGO_APK_RELEASE_KEYSTORE*)
+apk-release:
     #!/usr/bin/env bash
     set -euo pipefail
-    apk="$(find target -name '*.apk' -print -quit)"
+    : "${CARGO_APK_RELEASE_KEYSTORE:?set CARGO_APK_RELEASE_KEYSTORE to your .jks path}"
+    : "${CARGO_APK_RELEASE_KEYSTORE_PASSWORD:?set CARGO_APK_RELEASE_KEYSTORE_PASSWORD}"
+    cd app && cargo apk2 build --lib --release
+    cd "{{justfile_directory()}}"
+    just _apk-verify release
+
+# Print the path of the built APK (CI consumes this)
+apk-path profile="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # NEVER just glob '*.apk'. cargo-apk2 emits TWO files: a pre-zipalign
+    # <name>-unaligned.apk that CANNOT be installed, and the real <name>.apk.
+    # Picking the wrong one ships something that fails at install time.
+    apk="$(find "target/{{profile}}/apk" -maxdepth 1 -name '*.apk' ! -name '*-unaligned.apk' 2>/dev/null | head -1)"
     if [ -z "$apk" ]; then
-        echo "no APK found - run 'just apk' first" >&2
+        echo "no installable APK under target/{{profile}}/apk - run 'just apk' first" >&2
         exit 1
     fi
     printf '%s\n' "$apk"
+
+# Gate the APK before anyone tries to install it. Each check here corresponds
+# to a failure that ships silently: a truncated .so from a cache-restored
+# broken build installs then crashes; a missing launcher activity installs
+# with no icon and cannot be opened at all.
+[private]
+_apk-verify profile:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    apk="$(just apk-path {{profile}})"
+    bt="$(ls -d "${ANDROID_HOME:?ANDROID_HOME not set}"/build-tools/*/ | sort -V | tail -1)"
+    echo "APK: $apk"; ls -lh "$apk"
+    echo "=== manifest ==="
+    "${bt}aapt" dump badging "$apk" | grep -E 'package:|sdkVersion:|launchable-activity:|native-code:' || true
+    echo "=== signature ==="
+    "${bt}apksigner" verify --print-certs "$apk" | grep -E 'Verified using|Signer .* certificate' || true
+    if [ "{{profile}}" = "release" ] && "${bt}apksigner" verify --print-certs "$apk" | grep -qi 'Android Debug'; then
+        echo "ERROR: release APK is signed with the DEBUG key - signing did not take" >&2
+        exit 1
+    fi
+    size="$(unzip -l "$apk" | awk '/lib\/arm64-v8a\/.*\.so/ {print $1; exit}')"
+    echo "arm64-v8a native lib = ${size:-MISSING} bytes"
+    if [ -z "$size" ] || [ "$size" -lt 1000000 ]; then
+        echo "ERROR: arm64 native lib missing or truncated (${size:-0} bytes)" >&2
+        exit 1
+    fi
+    if ! "${bt}aapt" dump badging "$apk" | grep -q 'launchable-activity:'; then
+        echo "ERROR: no launchable-activity - installs but has no launcher icon" >&2
+        exit 1
+    fi
+    echo "APK verified."
 
 # Idempotent: re-running on an existing AVD is a no-op for creation. Picks
 # the system-image ABI to match the host: x86_64 on Intel/AMD, arm64-v8a

@@ -49,7 +49,8 @@ actually builds, rather than proving a placeholder-substituted copy of it does.
 | **Multi-arch APK** | aarch64 + x86_64, so one artifact runs on a phone *and* the default emulator |
 | **Dev container** | Rust, cargo-apk2, JDK 17, Kotlin, Android SDK 34, NDK r27 — all pinned |
 | **justfile** | `just build` / `release` / `run` / `setup-emulator` / `ci` |
-| **CI** | Host lint+test on every push; APK build, and release attachment on `v*` tags |
+| **CI** | Host lint+test + a verified **debug** APK on every push; **signed** release APK on `v*` tags |
+| **APK gating** | Every build is checked for a truncated native lib, a missing launcher activity, and debug-signed releases |
 
 ## Layout
 
@@ -62,7 +63,7 @@ actually builds, rather than proving a placeholder-substituted copy of it does.
 ├── docs/
 │   └── PROJECT_README.md   # becomes your README.md after init.sh
 ├── .devcontainer/
-└── .github/workflows/  # ci.yml (host) + android.yml (APK)
+└── .github/workflows/  # ci.yml (host + debug APK) + release.yml (signed)
 ```
 
 ## Related
