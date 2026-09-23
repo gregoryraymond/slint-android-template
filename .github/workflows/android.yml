@@ -2,15 +2,27 @@ name: Android APK
 
 # Builds an installable APK and, on a v* tag, attaches it to a GitHub Release.
 #
+# The toolchain setup here is deliberately COPIED from the CI that slint-mobile
+# already runs green for this exact stack, rather than invented. Two details in
+# it are load-bearing and were learned the hard way:
+#
+#   * `android-actions/setup-android@v3` is given `packages: ""`. With the
+#     default the action tries its own package install and fails the job before
+#     anything else runs - which is exactly how the first run of this workflow
+#     died.
+#   * The SDK platform, build-tools and NDK are then installed EXPLICITLY via
+#     sdkmanager, and ANDROID_NDK_ROOT is exported. cargo-apk2 needs all three
+#     and gives poor errors when one is missing.
+#
 # Packaging goes through `just apk`, the same recipe used locally, so the two
 # cannot drift.
 #
-# The release asset is attached DIRECTLY rather than via actions/upload-artifact:
-# artifact storage has a quota that a handful of ~90MB APKs exhausts, whereas
-# release assets count against repository storage. Ordinary pushes still get a
-# short-retention artifact, where the retention bounds the cost.
+# Release assets are attached DIRECTLY on tags rather than via
+# actions/upload-artifact: artifact storage has a quota that a handful of ~90MB
+# APKs exhausts, whereas release assets count against repository storage.
 #
-# Security note: no `run:` block interpolates github.event.*, github.head_ref or
+# Security note: github.ref is used only inside workflow-context `if:`
+# expressions. No `run:` block interpolates github.event.*, github.head_ref or
 # any other attacker-controllable value.
 
 on:
@@ -25,42 +37,65 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Pinned: cargo-apk2 is sensitive to NDK layout changes, so a new NDK release
-  # must not silently alter the output. Bump deliberately.
-  NDK_VERSION: '27.2.12479018'
+  ANDROID_API: "34"
+  ANDROID_BUILD_TOOLS: "34.0.0"
+  # Pinned to the version slint-mobile's CI builds green with. cargo-apk2 is
+  # sensitive to NDK layout changes, so bump deliberately.
+  ANDROID_NDK_VERSION: "27.0.12077973"
 
 jobs:
   apk:
+    name: just apk
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write        # only consumed by the release step on tag pushes
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, x86_64-linux-android
+          targets: aarch64-linux-android,x86_64-linux-android
 
-      - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v2
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # packages: "" is required - see the header comment.
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ""
 
-      - name: Install NDK
+      - name: Install Android platform, build-tools, NDK
         run: |
-          sdkmanager --install "ndk;${NDK_VERSION}" > /dev/null
-          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-$ANDROID_API" \
+            "build-tools;$ANDROID_BUILD_TOOLS" \
+            "ndk;$ANDROID_NDK_VERSION"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Install cargo-apk2
-        run: cargo install cargo-apk2 --locked
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      # cargo-apk2 isn't packaged by taiki-e/install-action, so install from
+      # crates.io. The Swatinem cache below covers it on re-runs.
+      - run: cargo install cargo-apk2 --locked
+
+      # Kotlin compiler - only invoked by cargo-apk2 when a crate declares
+      # `kotlin_sources`. Cheap enough to bundle unconditionally so a future
+      # glue crate (e.g. slint-android-gestures) Just Works without revisiting
+      # this file.
+      - name: Install Kotlin compiler
+        run: |
+          curl -sSL https://github.com/JetBrains/kotlin/releases/download/v1.9.0/kotlin-compiler-1.9.0.zip -o /tmp/kotlinc.zip
+          unzip -q /tmp/kotlinc.zip -d "$HOME"
+          echo "KOTLIN_HOME=$HOME/kotlinc" >> "$GITHUB_ENV"
+          echo "$HOME/kotlinc/bin" >> "$GITHUB_PATH"
+
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install host build dependencies
         run: just install-host-deps
@@ -68,20 +103,22 @@ jobs:
       - name: Build APK
         run: just apk
 
-      - name: Locate APK
-        id: find
-        run: echo "path=$(just apk-path)" >> "$GITHUB_OUTPUT"
-
+      # Ordinary pushes / PRs: short-retention artifact. The glob covers both
+      # multi-arch (target/release/apk/) and single-arch
+      # (target/<triple>/release/apk/) layouts.
       - name: Upload APK artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        # continue-on-error: a full artifact quota must not fail an otherwise
-        # green build. The tag path below does not depend on this step.
-        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: ${{ steps.find.outputs.path }}
+          path: target/**/apk/*.apk
+          if-no-files-found: error
           retention-days: 7
+
+      - name: Locate APK for release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        id: find
+        run: echo "path=$(just apk-path)" >> "$GITHUB_OUTPUT"
 
       - name: Attach APK to release
         if: ${{ startsWith(github.ref, 'refs/tags/') }}

@@ -36,7 +36,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: extractions/setup-just@v2
+      # taiki-e/install-action is what slint-mobile's green CI uses; keeping the
+      # same action here avoids two different ways of installing one tool.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
       # Slint's Skia renderer needs these to build even for a host check.
       - name: Install host build dependencies
