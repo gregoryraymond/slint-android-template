@@ -26,12 +26,22 @@ test:
 # Build a debug APK (multi-arch: aarch64 + x86_64)
 build:
     # cargo-apk2 doesn't honor `default-members`; run from the app/ dir so
-    # the cdylib package is selected unambiguously.
-    cd app && cargo apk2 build
+    # the cdylib package is selected unambiguously. --lib narrows it further to
+    # the cdylib: without it cargo-apk2 also tries to package the `desktop`
+    # example and fails looking for a non-existent examples/libdesktop.so.
+    cd app && cargo apk2 build --lib
+
+# Fast UI iteration with no emulator: builds the `desktop` example, which calls
+# the same run_ui() the Android entry point does. Rendering is winit+FemtoVG
+# here vs Skia on device, so layout matches but treat the device as the source
+# of truth for pixel-level detail.
+# Run the UI in a desktop window (no emulator needed)
+desktop:
+    cargo run -p slint_android_app --example desktop
 
 # Build a release APK (multi-arch: aarch64 + x86_64)
 release:
-    cd app && cargo apk2 build --release
+    cd app && cargo apk2 build --lib --release
 
 # Builds a DEBUG apk. A release APK is unsigned unless a keystore
 # is supplied, and an unsigned APK will not install - tapping it just gives
@@ -168,7 +178,7 @@ run:
     adb wait-for-device
     adb shell 'while [ "$(getprop sys.boot_completed | tr -d "\r")" != "1" ]; do sleep 2; done'
     echo "Device ready."
-    cd app && cargo apk2 run
+    cd app && cargo apk2 run --lib
 
 # Full local CI pipeline (mirrors what runs on PRs)
 ci: fmt-check clippy test

@@ -11,8 +11,11 @@ fn android_main(app: slint::android::AndroidApp) {
     run_ui();
 }
 
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
-fn run_ui() {
+/// Build and run the UI.
+///
+/// Called by `android_main` on device, and by the `desktop` example for local
+/// development (`just desktop`) so the UI can be iterated without an emulator.
+pub fn run_ui() {
     let ui = MainWindow::new().expect("failed to construct MainWindow");
     let counter = Rc::new(Counter::new());
 

@@ -55,9 +55,9 @@ jobs:
     name: clippy (workspace)
     runs-on: ubuntu-latest
     steps:
-      # No swapfile / job cap here. The host build uses slint's SOFTWARE
-      # renderer (app/Cargo.toml selects backends per target), so it never
-      # compiles Skia and stays light - the whole workspace checks in ~20s.
+      # No swapfile / job cap here. The host build uses winit + FemtoVG
+      # (app/Cargo.toml selects backends per target), so it never compiles
+      # Skia - which is what made the swapfile necessary elsewhere.
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:

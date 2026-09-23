@@ -49,6 +49,7 @@ a pure-Rust app builds without it.
 
 ```sh
 just                 # list recipes
+just desktop         # run the UI in a desktop window - no emulator
 just build           # debug APK (aarch64 + x86_64)
 just release         # release APK
 just setup-emulator  # create the "slint" AVD (once, ~700MB image)
@@ -58,6 +59,18 @@ just ci              # fmt-check + clippy + test, same as CI
 
 The APK is multi-arch, so one artifact installs on both a real device
 (aarch64) and the default emulator image (x86_64 on Intel/AMD hosts).
+
+### Desktop preview
+
+`just desktop` runs `app/examples/desktop.rs`, which calls the same `run_ui()`
+the Android entry point does — so UI work does not need an emulator round-trip.
+It renders through winit + FemtoVG rather than the Skia used on device; layout
+and behaviour match, but treat the device as the source of truth for
+pixel-level detail.
+
+Because that example exists, every `cargo apk2` invocation passes `--lib`.
+Without it cargo-apk2 tries to package the example too and fails looking for a
+non-existent `examples/libdesktop.so`.
 
 `just run` needs no `-p` or `--target` because the workspace sets
 `default-members = ["app"]`.
@@ -254,7 +267,9 @@ slint-mobile-components-widgets = { git = "https://github.com/gregoryraymond/sli
 ## Notes
 
 - Slint backends are selected **per target** in `app/Cargo.toml`:
-  android-activity + Skia on device, winit + the software renderer on the host.
+  android-activity + Skia on device, winit + FemtoVG on the host. FemtoVG is
+  GPU-accelerated, so a desktop preview is usable; it is not Skia because Skia
+  is much heavier to build. Device rendering is the source of truth.
   That is what lets `cargo check`/clippy run with no NDK, and keeps host builds
   off the heavy Skia graph. `backend-android-activity-06` tracks
   `android-activity` 0.6.x - update the feature name when Slint moves major.

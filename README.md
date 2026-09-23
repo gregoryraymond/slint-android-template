@@ -85,7 +85,7 @@ add JVM components, are covered in the project README this template installs.
 | **Stable import alias** | `core` is aliased to `app_core`, so renaming the project touches no `use` statement |
 | **Multi-arch APK** | aarch64 + x86_64, so one artifact runs on a phone *and* the default emulator |
 | **Dev container** | Rust, cargo-apk2, JDK 17, Kotlin, Android SDK 34, NDK r27 — all pinned |
-| **justfile** | `just build` / `release` / `run` / `setup-emulator` / `ci` |
+| **justfile** | `just desktop` (no-emulator UI preview) / `build` / `release` / `run` / `setup-emulator` / `ci` |
 | **CI** | Host lint+test + a verified **debug** APK on every push; **signed** release APK on `v*` tags |
 | **APK gating** | Every build is checked for a truncated native lib, a missing launcher activity, and debug-signed releases |
 

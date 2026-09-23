@@ -25,14 +25,19 @@ version = "1"
 default-features = false
 features = ["compat-1-2", "std", "backend-android-activity-06", "renderer-skia"]
 
-# renderer-software on the host, NOT femtovg: slint 1.18 does not publish
-# i-slint-renderer-femtovg (the crate stops at 1.16), so a femtovg host build
-# fails to resolve. Software rendering also needs no Skia/GL stack, which keeps
-# `cargo check` and CI lint fast - the host build only ever type-checks the UI.
+# femtovg on the host: GPU-accelerated, so a desktop preview built from this
+# crate is actually usable, not a slideshow. renderer-software builds ~15s
+# faster but only ever suits type-checking.
+#
+# NOT Skia on the host, even though that is what ships on device. Skia is by far
+# the heaviest of the three to build and was what forced a swapfile workaround
+# into CI. The cost of this choice is that desktop preview and device rendering
+# go through different renderers, so treat the device as the source of truth for
+# pixel-level work.
 [target.'cfg(not(target_os = "android"))'.dependencies.slint]
 version = "1"
 default-features = false
-features = ["compat-1-2", "std", "backend-winit", "renderer-software"]
+features = ["compat-1-2", "std", "backend-winit", "renderer-femtovg"]
 
 [build-dependencies]
 slint-build = { workspace = true }
