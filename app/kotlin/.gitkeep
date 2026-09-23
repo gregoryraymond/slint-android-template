@@ -1,3 +1,0 @@
-Put hand-written Kotlin/Java here, in directories mirroring the package
-declaration (e.g. com/example/myapp/Foo.kt), then uncomment `kotlin_sources`
-in ../Cargo.toml. See "Adding JVM-side glue" in the project README.

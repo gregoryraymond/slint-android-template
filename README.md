@@ -66,13 +66,14 @@ Java tools), and JVM-only APIs — permission dialogs, intents, notifications �
 still require JNI. A Kotlin compiler is unnecessary unless a dependency ships
 `kotlin_sources`.
 
-**Starting without JVM code does not lock you out of it.** `app/kotlin/` is
-there for hand-written Kotlin/Java, `app/Cargo.toml` carries a commented
-`kotlin_sources` line next to the other Android settings, and both the dev
-container and CI install `kotlinc` already — so adding a custom Activity,
-a Service, or a JNI bridge is uncommenting one line, not restructuring the
-build. Call into it from Rust with `jni` (pin 0.21, the version Slint's Android
-backend already uses).
+**Starting without JVM code does not lock you out of it, and the intended path
+is to generate Kotlin rather than write it.** A glue crate bundles its `.kt` and
+emits it into `app/kotlin/` from your `build.rs`, so it is regenerated every build
+and never maintained by hand — `app/kotlin/` is gitignored for that reason.
+`app/Cargo.toml` carries a commented `kotlin_sources` line, and both the dev
+container and CI install `kotlinc` already, so adding a generated Activity, a
+Service or a JNI bridge is wiring one build.rs line. Call into it from Rust with
+`jni` (pin 0.21, the version Slint's Android backend already uses).
 
 Why the activity block in `app/Cargo.toml` is mandatory, and the three ways to
 add JVM components, are covered in the project README this template installs.

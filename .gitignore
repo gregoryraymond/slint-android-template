@@ -13,3 +13,10 @@ Cargo.lock.bak
 .vscode/
 *.swp
 .DS_Store
+
+# Kotlin/Java emitted into the APK by build.rs. Glue crates bundle their .kt
+# with include_str! and write it here at build time (see copy_kotlin_to in the
+# project README), so this is build output, not source. If you hand-write
+# Kotlin instead, un-ignore it with a negation such as:
+#   !/app/kotlin/com/example/myapp/
+/app/kotlin/

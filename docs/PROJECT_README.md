@@ -181,65 +181,67 @@ build on exactly that.
 ## Adding Kotlin or Java components
 
 Starting with no JVM code does not lock you out of it. cargo-apk2 compiles
-Kotlin and Java sources into the APK's `classes.dex` alongside the Rust
-`cdylib`, so you can add JVM components when you need one and keep everything
-else in Rust.
+Kotlin and Java into the APK's `classes.dex` alongside the Rust `cdylib`.
 
-`app/kotlin/` exists for this, and `app/Cargo.toml` carries a commented
-`kotlin_sources = "kotlin"` next to the other Android settings. It ships
-commented out because **kotlinc errors on an empty source directory** — enabling
-it before there is anything to compile breaks the build. Both the dev container
-and CI already install kotlinc, so uncommenting is the only step.
-
-### Hand-written Kotlin
-
-Put sources under `app/kotlin/`, in directories mirroring the package
-declaration:
-
-```
-app/kotlin/com/example/myapp/Notifier.kt
-```
-
-Uncomment `kotlin_sources = "kotlin"` and they compile on a normal `just apk`.
-Call into them from Rust with the [`jni`](https://docs.rs/jni) crate — pin
-**jni 0.21**, which is what Slint's Android backend already pulls in, so the
-build does not end up with two incompatible jni versions.
-
-### Kotlin shipped by a crate
-
-A glue crate cannot write into your source tree directly, so the convention is
-that it `include_str!`s its `.kt` at its own compile time and exposes a helper
-your `build.rs` calls to materialise them:
+**The intended path is to generate that Kotlin, not write it.** A glue crate
+bundles its `.kt` with `include_str!` and exposes a helper your `build.rs`
+calls, so the Kotlin is emitted into `app/kotlin/` on every build and you never
+maintain it:
 
 ```rust
 // app/build.rs
 fn main() {
     slint_build::compile("ui/main.slint").expect("Slint build failed");
-    // Emit the crate's Kotlin into app/kotlin/ so kotlin_sources picks it up.
-    slint_android_gestures::build::copy_kotlin_to("kotlin").expect("write kotlin");
+    slint_android_gestures::build::copy_kotlin_to("kotlin")
+        .expect("write kotlin sources");
 }
 ```
 
-Add the crate to **`[build-dependencies]`** as well as `[dependencies]` if you
-also call its runtime API; Cargo dedups the compilation across both roles.
+Then uncomment `kotlin_sources = "kotlin"` in `app/Cargo.toml`, and add the
+crate to **`[build-dependencies]`** as well as `[dependencies]` if you also call
+its runtime API — Cargo dedups the compilation across both roles.
+
+`app/kotlin/` is **gitignored**: it is build output, regenerated every time, not
+source. `kotlin_sources` ships commented out because kotlinc errors on an empty
+directory, so enabling it before a generator exists breaks the build. The dev
+container and CI both install kotlinc already.
+
 [`slint-android-gestures`](https://github.com/gregoryraymond/slint-mapping/tree/main/crates/slint-android-gestures)
-is a complete worked example — it bridges raw `MotionEvent`s into a safe Rust
-callback API for multi-touch.
+is a complete worked example — it emits a `GestureBridge.kt` and a
+`SlintGestureActivity.kt` that turn raw `MotionEvent`s into a safe Rust callback
+API for multi-touch.
+
+Call into any of it from Rust with [`jni`](https://docs.rs/jni) — pin **0.21**,
+the version Slint's Android backend already pulls in, so the build does not end
+up with two incompatible jni versions.
+
+### If you do hand-write Kotlin
+
+Put sources under `app/kotlin/` in directories mirroring the package
+declaration (`app/kotlin/com/example/myapp/Notifier.kt`) and un-ignore that path
+in `.gitignore`, e.g.:
+
+```gitignore
+!/app/kotlin/com/example/myapp/
+```
+
+Keeping the negation narrow matters: a generator writing into a sibling package
+directory should still stay out of git.
 
 ### Replacing the Activity
 
 The default launcher activity is the framework's `android.app.NativeActivity`
-(see above). To use your own Kotlin `Activity` — typically one that subclasses
-`NativeActivity` so Slint still gets its surface — write it under `app/kotlin/`
-and change the `name` in the activity block:
+(see above). A generated Activity — `slint-android-gestures` emits one — is
+selected by changing `name` in the activity block:
 
 ```toml
 [[package.metadata.android.application.activity]]
-name = "com.example.myapp.MyActivity"     # was android.app.NativeActivity
+name = "dev.slint.gestures.SlintGestureActivity"   # was android.app.NativeActivity
 ```
 
-Keep the `android.app.lib_name` meta-data: `NativeActivity` uses it to find the
-`cdylib` regardless of which subclass is declared.
+Keep the `android.app.lib_name` meta-data. `NativeActivity` uses it to locate
+the `cdylib` regardless of which subclass is declared, and a generated Activity
+that subclasses it still relies on that lookup.
 
 ### Services and other manifest entries
 
