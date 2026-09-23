@@ -43,8 +43,7 @@ actually builds, rather than proving a placeholder-substituted copy of it does.
 ## No Java, no Kotlin, no Gradle
 
 Android normally starts an app through an Activity class you write in Java or
-Kotlin. This template has none — and the way it gets away with that is worth
-understanding before you build on it.
+Kotlin. This template has none.
 
 The activity comes from the **Android framework**, not from the APK.
 `android.app.NativeActivity` ships on every device; the manifest points at it,
@@ -62,13 +61,13 @@ That hinges on one feature flag. `android-activity` has two modes, and Slint's
 | **`native-activity`** ← what this uses | No — framework class |
 | `game-activity` | Yes — AndroidX `GameActivity` must be compiled in |
 
-Two caveats worth stating plainly: a **JDK is still needed to package** the APK
-(`aapt`/`apksigner`/`zipalign` are Java tools), and JVM-only APIs — permission
-dialogs, intents, notifications — still require JNI. A Kotlin compiler is
-genuinely unnecessary unless a dependency ships `kotlin_sources`.
+A **JDK is still needed to package** the APK (`aapt`/`apksigner`/`zipalign` are
+Java tools), and JVM-only APIs — permission dialogs, intents, notifications —
+still require JNI. A Kotlin compiler is unnecessary unless a dependency ships
+`kotlin_sources`.
 
-Full detail, including why the activity block in `app/Cargo.toml` is mandatory,
-is in the project README this template installs.
+Why the activity block in `app/Cargo.toml` is mandatory is covered in the
+project README this template installs.
 
 ## What you get
 
