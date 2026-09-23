@@ -1,4 +1,4 @@
-//! Pure-logic crate for slint_mobile.
+//! Pure-logic crate for slint-android-app.
 //!
 //! No Slint or Android dependencies live here — only domain types and logic.
 //! The UI layer (`app/`) consumes this through a normal Rust dependency, so

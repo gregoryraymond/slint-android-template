@@ -33,7 +33,7 @@ build:
 release:
     cd app && cargo apk2 build --release
 
-# Builds a DEBUG apk on purpose. A release APK is unsigned unless a keystore
+# Builds a DEBUG apk. A release APK is unsigned unless a keystore
 # is supplied, and an unsigned APK will not install - tapping it just gives
 # "problem parsing the package". The debug build is auto-signed with the
 # standard Android debug key, so it installs and proves packaging works.

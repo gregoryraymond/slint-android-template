@@ -14,7 +14,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-# NOTE: `slint` itself is NOT declared here. The app crate needs DIFFERENT
+# `slint` itself is NOT declared here. The app crate needs DIFFERENT
 # backends per target - android-activity+Skia on device, winit+FemtoVG on the
 # host - and a single workspace entry cannot express that. See app/Cargo.toml.
 slint-build = "1"

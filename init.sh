@@ -19,7 +19,9 @@ NAME="" PKG="" LABEL="" ASSUME_YES=0
 die() { echo "error: $*" >&2; exit 1; }
 
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    # Print the header comment block, stopping at the first non-comment line.
+    # A hardcoded line range silently leaks code into --help as the block grows.
+    awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"
     cat <<'EOF'
 
 Options:

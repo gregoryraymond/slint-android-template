@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Dev container for slint_mobile.
+# Dev container for slint-android-app.
 #
 # What this image documents (and provides):
 #   - Rust stable + aarch64-linux-android target
