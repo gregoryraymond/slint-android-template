@@ -1,0 +1,37 @@
+[workspace]
+members = ["core", "app"]
+# `cargo apk2 run` (no -p flag) resolves to this package. The app crate's
+# [package.metadata.android] then pins `build_targets = ["aarch64-linux-android"]`,
+# so the target is implicit too. Use `cargo test --workspace` to exercise
+# core's tests as well.
+default-members = ["app"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+slint = { version = "1", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-android-activity-06",
+    "renderer-skia",
+] }
+slint-build = "1"
+
+# Rename the core crate's templated package name into the stable in-source
+# alias `app_core`. This keeps Rust source files free of liquid placeholders,
+# so the template repo itself stays editor-/rust-analyzer-friendly.
+app_core = { path = "core", package = "slint_android_app_core" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev]
+opt-level = 1

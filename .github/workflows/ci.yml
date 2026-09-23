@@ -1,0 +1,46 @@
+name: CI
+
+# Host-side gate: formatting, clippy and tests. Deliberately needs no Android
+# NDK, so it stays fast and runs on every push. APK packaging is android.yml.
+#
+# Every step calls a justfile recipe rather than raw cargo, so `just ci` green
+# on your laptop means this job is green too. Verified: the app crate DOES
+# compile for the host - Slint gates the android-activity backend behind
+# target_os = "android" and falls back to a host backend - so clippy can lint
+# the whole workspace here without an NDK.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        # rust-toolchain.toml pins the channel and targets, so the version
+        # lives in exactly one place.
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: extractions/setup-just@v2
+
+      # Slint's Skia renderer needs these to build even for a host check.
+      - name: Install host build dependencies
+        run: just install-host-deps
+
+      - name: fmt + clippy + test
+        run: just ci

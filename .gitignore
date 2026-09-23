@@ -1,0 +1,15 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# cargo-apk build artifacts
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store

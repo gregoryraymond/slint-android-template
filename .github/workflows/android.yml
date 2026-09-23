@@ -1,0 +1,91 @@
+name: Android APK
+
+# Builds an installable APK and, on a v* tag, attaches it to a GitHub Release.
+#
+# Packaging goes through `just apk`, the same recipe used locally, so the two
+# cannot drift.
+#
+# The release asset is attached DIRECTLY rather than via actions/upload-artifact:
+# artifact storage has a quota that a handful of ~90MB APKs exhausts, whereas
+# release assets count against repository storage. Ordinary pushes still get a
+# short-retention artifact, where the retention bounds the cost.
+#
+# Security note: no `run:` block interpolates github.event.*, github.head_ref or
+# any other attacker-controllable value.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned: cargo-apk2 is sensitive to NDK layout changes, so a new NDK release
+  # must not silently alter the output. Bump deliberately.
+  NDK_VERSION: '27.2.12479018'
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # only consumed by the release step on tag pushes
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+      - uses: extractions/setup-just@v2
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}" > /dev/null
+          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install cargo-apk2
+        run: cargo install cargo-apk2 --locked
+
+      - name: Install host build dependencies
+        run: just install-host-deps
+
+      - name: Build APK
+        run: just apk
+
+      - name: Locate APK
+        id: find
+        run: echo "path=$(just apk-path)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        # continue-on-error: a full artifact quota must not fail an otherwise
+        # green build. The tag path below does not depend on this step.
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: ${{ steps.find.outputs.path }}
+          retention-days: 7
+
+      - name: Attach APK to release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.find.outputs.path }}
+          fail_on_unmatched_files: true

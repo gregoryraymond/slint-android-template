@@ -1,0 +1,34 @@
+{
+    "name": "slint-android-app",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "remoteUser": "vscode",
+    "containerEnv": {
+        "ANDROID_HOME": "/opt/android-sdk",
+        "ANDROID_SDK_ROOT": "/opt/android-sdk",
+        "ANDROID_NDK_ROOT": "/opt/android-sdk/ndk/27.0.12077973",
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "Slint.slint",
+                "tamasfe.even-better-toml",
+                "vadimcn.vscode-lldb"
+            ],
+            "settings": {
+                "rust-analyzer.cargo.targets": ["aarch64-linux-android"],
+                "rust-analyzer.check.command": "clippy"
+            }
+        }
+    },
+    // adb-over-USB: uncomment the mount below on a Linux host to forward a
+    // USB-attached device into the container. On macOS/Windows hosts, prefer
+    // `adb connect <emulator-host>:5555` over TCP instead.
+    "mounts": [
+        // "source=/dev/bus/usb,target=/dev/bus/usb,type=bind"
+    ],
+    "postCreateCommand": "cargo --version && rustc --version && cargo apk --version"
+}

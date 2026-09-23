@@ -1,0 +1,41 @@
+import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Slint Android App";
+    preferred-width: 412px;
+    preferred-height: 892px;
+    background: #0f1115;
+
+    in-out property <int> count: 0;
+    callback bump();
+
+    VerticalBox {
+        alignment: center;
+        spacing: 24px;
+        padding: 24px;
+
+        Text {
+            text: "Slint on Android";
+            color: #f5f5f7;
+            font-size: 28px;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: "Taps: " + root.count;
+            color: #9aa0a6;
+            font-size: 18px;
+            horizontal-alignment: center;
+        }
+
+        HorizontalBox {
+            alignment: center;
+            Button {
+                text: "Tap me";
+                primary: true;
+                clicked => { root.bump(); }
+            }
+        }
+    }
+}
