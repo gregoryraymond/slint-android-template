@@ -40,6 +40,36 @@ actually builds, rather than proving a placeholder-substituted copy of it does.
 > same scaffold, placeholder-based, driven by `cargo generate --git`.
 > This repo is the GitHub-template equivalent.
 
+## No Java, no Kotlin, no Gradle
+
+Android normally starts an app through an Activity class you write in Java or
+Kotlin. This template has none — and the way it gets away with that is worth
+understanding before you build on it.
+
+The activity comes from the **Android framework**, not from the APK.
+`android.app.NativeActivity` ships on every device; the manifest points at it,
+`android.app.lib_name` names our Rust `cdylib`, and at launch the framework
+`dlopen()`s that library and calls `ANativeActivity_onCreate` — which
+`android-activity` implements and forwards to `android_main`. The app is a Rust
+shared library in a platform-provided shell.
+
+That hinges on one feature flag. `android-activity` has two modes, and Slint's
+`backend-android-activity-06` picks the JVM-free one (verified in slint
+1.18.1's `Cargo.toml`):
+
+| Mode | Needs Java/Kotlin? |
+|---|---|
+| **`native-activity`** ← what this uses | No — framework class |
+| `game-activity` | Yes — AndroidX `GameActivity` must be compiled in |
+
+Two caveats worth stating plainly: a **JDK is still needed to package** the APK
+(`aapt`/`apksigner`/`zipalign` are Java tools), and JVM-only APIs — permission
+dialogs, intents, notifications — still require JNI. A Kotlin compiler is
+genuinely unnecessary unless a dependency ships `kotlin_sources`.
+
+Full detail, including why the activity block in `app/Cargo.toml` is mandatory,
+is in the project README this template installs.
+
 ## What you get
 
 | | |
