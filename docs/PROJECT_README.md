@@ -12,12 +12,15 @@ slint-android-app/
 ├── rust-toolchain.toml # Pins stable + the Android targets
 ├── core/               # Pure-logic crate (rlib). No Slint, no Android.
 │   └── src/lib.rs
-└── app/                # UI + Android entry point (cdylib).
-    ├── build.rs        # Invokes slint-build on ui/main.slint
+└── app/                # UI + Android entry point (cdylib + rlib).
+    ├── build.rs        # slint-build on ui/main.slint; wire Kotlin generators here
     ├── ui/main.slint   # Declarative UI
     ├── android-res/    # Android resources
     ├── android-assets/ # Android assets
-    └── src/lib.rs      # android_main entry point
+    ├── examples/
+    │   └── desktop.rs  # `just desktop` - preview with no emulator
+    ├── kotlin/         # GENERATED JVM sources - gitignored, created by build.rs
+    └── src/lib.rs      # android_main (device) + pub run_ui() (shared)
 ```
 
 The split is deliberate: `core/` builds and tests on the host with plain

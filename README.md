@@ -35,10 +35,18 @@ The trade-off is that the template repo has a concrete name in it
 (`slint-android-app`) — which is also what lets CI here prove the scaffold
 actually builds, rather than proving a placeholder-substituted copy of it does.
 
-> Prefer `cargo generate`? Use
-> [`slint-mobile`](https://github.com/gregoryraymond/slint-mobile) instead —
-> same scaffold, placeholder-based, driven by `cargo generate --git`.
-> This repo is the GitHub-template equivalent.
+> Prefer `cargo generate`? It works against this repo too — a template needs no
+> placeholders for `cargo generate --git` to copy the tree, and `init.sh` then
+> does the renaming placeholders used to:
+>
+> ```sh
+> cargo generate --git https://github.com/gregoryraymond/slint-android-template
+> cd my-app && ./init.sh --name my-app --package com.example.myapp
+> ```
+>
+> The older placeholder-based `slint-mobile` template is **retired** — apps
+> generated from it install but cannot be opened, because it predates the
+> mandatory Android activity block.
 
 ## No Java, no Kotlin, no Gradle
 
@@ -98,6 +106,8 @@ add JVM components, are covered in the project README this template installs.
 ├── rust-toolchain.toml # pinned channel + android targets
 ├── core/               # pure-logic rlib
 ├── app/                # cdylib: Slint UI + android_main
+│   ├── examples/desktop.rs   # `just desktop` - no-emulator preview
+│   └── kotlin/               # generated JVM sources (gitignored)
 ├── docs/
 │   └── PROJECT_README.md   # becomes your README.md after init.sh
 ├── .devcontainer/
@@ -106,8 +116,8 @@ add JVM components, are covered in the project README this template installs.
 
 ## Related
 
-- [`slint-mobile`](https://github.com/gregoryraymond/slint-mobile) — the same
-  scaffold as a `cargo generate` template
+- [`slint-mobile`](https://github.com/gregoryraymond/slint-mobile) — **retired**;
+  this repo replaces it
 - [`slint-mobile-components`](https://github.com/gregoryraymond/slint-mobile-components)
   — widgets and theme, usable as git dependencies
 - [`slint-mapping`](https://github.com/gregoryraymond/slint-mapping) — map
