@@ -5,30 +5,46 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# `cdylib` is what cargo-apk2 packages into the APK. `rlib` additionally lets
+# host tests and examples link against the crate.
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [dependencies]
-slint = { workspace = true }
 app_core = { workspace = true }
+
+# Slint is declared PER TARGET, which is why it is not a workspace dependency.
+#
+# On Android: the android-activity backend + Skia renderer - what cargo-apk2
+# actually packages. On the host (desktop dev, `cargo check`, CI lint): winit +
+# FemtoVG, so the workspace type-checks with no NDK installed. The same UI code
+# builds either way.
+[target.'cfg(target_os = "android")'.dependencies.slint]
+version = "1"
+default-features = false
+features = ["compat-1-2", "std", "backend-android-activity-06", "renderer-skia"]
+
+# renderer-software on the host, NOT femtovg: slint 1.18 does not publish
+# i-slint-renderer-femtovg (the crate stops at 1.16), so a femtovg host build
+# fails to resolve. Software rendering also needs no Skia/GL stack, which keeps
+# `cargo check` and CI lint fast - the host build only ever type-checks the UI.
+[target.'cfg(not(target_os = "android"))'.dependencies.slint]
+version = "1"
+default-features = false
+features = ["compat-1-2", "std", "backend-winit", "renderer-software"]
 
 [build-dependencies]
 slint-build = { workspace = true }
 
-# cargo-apk2 configuration. Everything under [package.metadata.android] is
-# read by cargo-apk2 when packaging the cdylib into an APK. `build_targets`
-# here is what lets `cargo apk2 run` work without an explicit `--target`.
-#
-# cargo-apk2 also supports `kotlin_sources = "kotlin"` (and `java_sources`)
-# if you grow JVM-side glue later — see the README's "Adding JVM-side
-# glue" section. The default project doesn't ship any.
+# ---- cargo-apk2 packaging ----
+# Everything below is read by cargo-apk2 when packaging the cdylib into an APK.
+# `build_targets` is what lets `cargo apk2 run` work without an explicit
+# --target.
 [package.metadata.android]
 package = "com.example.slintandroidapp"
-# Build both ABIs by default: aarch64 is the only architecture on real
-# Android devices; x86_64 is what the default emulator system image uses
-# on Linux/Windows dev machines. With both listed, the produced APK runs
-# unchanged on a phone or on the local emulator.
+# aarch64 is what real devices use; x86_64 is the default emulator image on
+# Linux/Windows hosts. With both listed one APK runs on a phone or the emulator.
 build_targets = ["aarch64-linux-android", "x86_64-linux-android"]
 resources = "android-res"
 assets = "android-assets"
@@ -39,10 +55,40 @@ target_sdk_version = 34
 
 [package.metadata.android.application]
 label = "Slint Android App"
-# theme = "@android:style/Theme.DeviceDefault.NoActionBar"
+# NoActionBar: NativeActivity's default theme carries a never-composited system
+# ActionBar that still inflates content_rect.top, which makes the app's
+# safe-area inset come out roughly twice the status bar height.
+theme = "@android:style/Theme.DeviceDefault.NoActionBar"
+
+# THIS BLOCK IS REQUIRED. cargo-apk2 - unlike the original cargo-apk - does NOT
+# generate an activity implicitly. Without it the manifest contains zero
+# activities, so the app installs successfully but has no launcher icon and
+# cannot be opened at all. `just apk` fails the build on exactly this, because
+# it is otherwise completely silent.
+#
+# Slint's backend-android-activity-06 enables android-activity's
+# *native-activity* feature, so the launcher activity is the framework's own
+# android.app.NativeActivity - always present on-device, no bundled Java - with
+# android.app.lib_name naming our cdylib.
+[[package.metadata.android.application.activity]]
+name = "android.app.NativeActivity"
+label = "Slint Android App"
+# Slint handles these itself; declaring them stops Android destroying and
+# recreating the activity (losing the GL surface) on rotate / keyboard show.
+config_changes = "orientation|keyboardHidden|screenSize|screenLayout|density"
+exported = true
+
+# Must match the cdylib name, i.e. the [package] name above.
+[[package.metadata.android.application.activity.meta_data]]
+name = "android.app.lib_name"
+value = "slint_android_app"
+
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.MAIN"]
+categories = ["android.intent.category.LAUNCHER"]
 
 # Slint's Skia renderer uses Vulkan when available but falls back to GL.
-# Declare Vulkan as optional so the APK still installs on Vulkan-less devices.
+# Declare Vulkan optional so the APK still installs on Vulkan-less devices.
 [[package.metadata.android.uses_feature]]
 name = "android.hardware.vulkan.level"
 required = false

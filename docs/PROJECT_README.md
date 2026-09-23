@@ -128,8 +128,15 @@ slint-mobile-components-widgets = { git = "https://github.com/gregoryraymond/sli
 
 ## Notes
 
-- `backend-android-activity-06` tracks `android-activity` 0.6.x. When Slint
-  moves to a newer major, update the feature name in the workspace `Cargo.toml`.
+- Slint backends are selected **per target** in `app/Cargo.toml`:
+  android-activity + Skia on device, winit + the software renderer on the host.
+  That is what lets `cargo check`/clippy run with no NDK, and keeps host builds
+  off the heavy Skia graph. `backend-android-activity-06` tracks
+  `android-activity` 0.6.x - update the feature name when Slint moves major.
+- The `[[package.metadata.android.application.activity]]` block is **required**.
+  cargo-apk2 does not generate an activity implicitly, and without it the app
+  installs with no launcher icon and cannot be opened. `android.app.lib_name`
+  must match the crate name.
 - `min_sdk_version = 24` is the floor for Skia + modern `android-activity`.
   Below it the build succeeds but the renderer fails on real devices.
 - Android application id is set in `app/Cargo.toml` under

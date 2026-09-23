@@ -14,12 +14,9 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-slint = { version = "1", default-features = false, features = [
-    "compat-1-2",
-    "std",
-    "backend-android-activity-06",
-    "renderer-skia",
-] }
+# NOTE: `slint` itself is NOT declared here. The app crate needs DIFFERENT
+# backends per target - android-activity+Skia on device, winit+FemtoVG on the
+# host - and a single workspace entry cannot express that. See app/Cargo.toml.
 slint-build = "1"
 
 # Rename the core crate's templated package name into the stable in-source
@@ -33,5 +30,7 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 
+# opt-level 0, not 1: optimizing every dependency in the Slint/Skia graph can
+# exhaust RAM on a 7GB CI runner. Release builds still use full optimization.
 [profile.dev]
-opt-level = 1
+opt-level = 0

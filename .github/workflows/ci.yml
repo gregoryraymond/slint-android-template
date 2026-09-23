@@ -54,23 +54,10 @@ jobs:
   clippy:
     name: clippy (workspace)
     runs-on: ubuntu-latest
-    env:
-      CARGO_BUILD_JOBS: "2"
     steps:
-      # Host Skia/Slint graph is heavy enough that the runner can be reclaimed
-      # mid-check without this. Best-effort: a swap hiccup must not fail the job.
-      - name: Add swap space
-        continue-on-error: true
-        run: |
-          # The runner ships an active /swapfile, so fallocate on it fails with
-          # "Text file busy" - disable first, then replace with a bigger one.
-          sudo swapoff -a || true
-          sudo rm -f /swapfile
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          swapon --show
+      # No swapfile / job cap here. The host build uses slint's SOFTWARE
+      # renderer (app/Cargo.toml selects backends per target), so it never
+      # compiles Skia and stays light - the whole workspace checks in ~20s.
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
